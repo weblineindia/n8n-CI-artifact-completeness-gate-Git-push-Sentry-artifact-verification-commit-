@@ -1,0 +1,516 @@
+{
+  "name": "CI Artifact Completeness Gate",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "\n\n// Let's use the simplest, most common way to get the data when running 'Once for All Items'\n// which is usually $json, or, more safely, $input.\n\nconst inputData = $input.all();\n\n// Step 1: Ensure we have an array of the file objects\nconst sentryFiles = Array.isArray(inputData) ? inputData : [];\n\n// Step 2: Handle empty or invalid input\n// Using standard JavaScript 'Array.isArray'\nif (sentryFiles.length === 0) {\n    return [{\n        json: { status: 'failure', description: 'No files returned from Sentry for analysis.' }\n    }];\n}\n\n// Step 3: Extract file names for easier checking\n// The map function can be executed directly on sentryFiles\n\nconst fileNames = sentryFiles.map(file => file.json.name);\n\n// Step 4: Check for dSYM (Priority Check)\nconst hasDSYM = fileNames.some(name => /\\.dSYM$/i.test(name));\n\n// Step 5: Check for ProGuard/Mapping (Fallback Check)\nconst hasProguard = fileNames.some(name => /proguard\\.txt$/i.test(name));\nconst hasMapping = fileNames.some(name => /mapping\\.txt$/i.test(name));\n\n// Step 6: Determine final status based on logic\nlet status, description;\n\n// Condition 1: dSYM exists (highest priority)\nif (hasDSYM) {\n    status = 'success';\n    description = 'Success: Valid dSYM artifact found.';\n} \n// Condition 2: dSYM does NOT exist, but BOTH ProGuard and Mapping exist\nelse if (hasProguard && hasMapping) {\n    status = 'success';\n    description = 'Success: dSYM not found, but ProGuard and Mapping.txt artifacts are complete.';\n} \n// Condition 3: Failure\nelse {\n    const missing = [];\n    if (!hasProguard) missing.push('proguard.txt');\n    if (!hasMapping) missing.push('mapping.txt');\n    \n    status = 'failure';\n    description = `Failure: Neither dSYM was found, nor was the complete set of ProGuard artifacts. Missing: ${missing.join(' and ')}`;\n}\n\n// Step 7: Return the final result\nreturn [{ json: { status, description } }];\n\n"
+      },
+      "id": "9b94178b-9527-46bc-9e84-3673675c0951",
+      "name": "Verify Artifacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        0
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "owner": {
+          "__rl": true,
+          "value": "repo_owner",
+          "mode": "name"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "repo_name",
+          "mode": "list",
+          "cachedResultName": "repo_name",
+          "cachedResultUrl": "https://github.com/repo_owner/repo_name"
+        },
+        "events": [
+          "push"
+        ],
+        "options": {
+          "insecureSSL": false
+        }
+      },
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        0
+      ],
+      "id": "81aa32b4-3621-4a87-94bd-d7d997ae9879",
+      "name": "GithubPushTrigger",
+      "webhookId": "18e18df2-708c-4497-966c-48181fdb800b",
+      "credentials": {
+        "githubApi": {
+          "id": "vcwkEYebN1BqWFLe",
+          "name": "GitHub account 6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://sentry.io/api/0/projects/org_slug/proj_slug/releases/\n",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "sentryIoApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer token"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "971f3b61-87b6-483d-974b-829917719e3b",
+      "name": "Check Sentry Artifacts Releases"
+    },
+    {
+      "parameters": {
+        "url": "=https://sentry.io/api/0/projects/org_slug/proj_slug/releases/{{ $json.version }}/files/\n",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "sentryIoApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer token"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        816,
+        0
+      ],
+      "id": "0ac8589e-fb9d-4c24-a161-10dce31874da",
+      "name": "Check Sentry Artifacts files",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $json.repoDetail.repoFullName }}/statuses/{{ $json.repoDetail.repoCommitSha }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "state",
+              "value": "success"
+            },
+            {
+              "name": "description",
+              "value": "Artifacts successfully verified."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cbe6788f-1026-4a02-a841-7b2dabe861a5",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2320,
+        0
+      ],
+      "credentials": {
+        "githubApi": {
+          "id": "vcwkEYebN1BqWFLe",
+          "name": "GitHub account 6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n\n// Let's use the simplest, most common way to get the data when running 'Once for All Items'\n// which is usually $json, or, more safely, $input.\nconst repoCommitSha = $node[\"GithubPushTrigger\"].json[\"body\"][\"after\"];\nconst repoFullName = $node[\"GithubPushTrigger\"].json[\"body\"][\"repository\"][\"full_name\"];\nconst repoDetail = {repoFullName, repoCommitSha};\nconst inputData = $input.all();\n\n// Step 7: Return the final result\nif ($input.first().json.status === 'success') {\nreturn [{ json: { inputData, repoDetail } }];\n} else {\n  return []\n}\n\n"
+      },
+      "id": "d9d95c07-078f-4015-ac47-d983486ee468",
+      "name": "Artifacts Validation and Get Repository Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        0
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "content": "# How It Works\n### This workflow functions as a critical CI/CD Quality Gate, automatically verifying that all essential build artifacts are uploaded to Sentry before allowing code to be merged. The process is initiated by a Webhook or a GitHub Push event, which provides the specific release version and commit SHA. The workflow then uses HTTP Requests to query the Sentry API, retrieving a list of all files associated with that release. A Code node runs custom logic to verify completeness, checking for required files like dSYMs, ProGuard, or Mapping files using file name patterns. If verification succeeds, a final HTTP Request updates the commit status on GitHub to success, allowing the associated Pull Request to be merged.\n\n# Setup Steps\n## Add Trigger\nSet up a Webhook or a GitHub Trigger (for push events) to start the workflow.\n\n## Connect Accounts\nAdd credentials for both Sentry.io API and GitHub API.\n\n## Configure Requests\nUpdate the Sentry API URLs in the HTTP Request nodes with your organization and project slugs, ensuring they correctly interpolate the release version from the trigger.\n\n## Update GitHub Status\nConfigure the final HTTP Request node to post the verification status (success/failure) to your repository's commit status endpoint using the commit SHA.",
+        "height": 928,
+        "width": 544
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1280,
+        -352
+      ],
+      "typeVersion": 1,
+      "id": "0280557b-b520-4d7f-b887-8c4447660986",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "## GithubPushTrigger & Check Sentry Artifacts Releases\nThe workflow begins with a GitHub Push Trigger (or Webhook) that starts the process upon a code push, capturing the vital commit_sha and repository details. Immediately, an HTTP Request node authenticates with the Sentry API to execute a GET request to the /releases/ endpoint. This step's purpose is to retrieve metadata for all existing Sentry releases within the project, which is necessary to locate and verify the files for the specific release associated with the triggering commit.",
+        "height": 576,
+        "width": 912,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -512,
+        -272
+      ],
+      "typeVersion": 1,
+      "id": "6723f1d4-5de5-4aae-bf80-d71e1a9cb331",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## Get Sentry Artifacts Files and  Verify\nThe Check Sentry Artifacts files node first executes an HTTP GET request using a dynamic URL (e.g., .../releases/{{ $json.version }}/files/) to retrieve the full array of uploaded artifact objects for the specific release from the Sentry API. This artifact list is then consumed by the Verify Artifacts Code node, which contains the core business logic to validate completeness. This node implements a priority check: the release is deemed a success if a dSYM file is present, OR as a fallback, if both proguard.txt and mapping.txt are found. The final output of this validation step is an object providing the resulting status ('success' or 'failure') and a corresponding descriptive message.",
+        "height": 576,
+        "width": 976,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        528,
+        -272
+      ],
+      "typeVersion": 1,
+      "id": "0c252ab9-2b89-4300-a53d-a9447d08dbd4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Validate Artifacts and Updae Status\nThe Check Sentry Artifacts files node retrieves the uploaded artifacts list, which is validated by the Verify Artifacts Code node (checking for a dSYM OR both proguard.txt and mapping.txt).\nThe Artifacts Validation node enforces the CI gate: if the check fails, the workflow stops, preventing the merge. If successful, it passes the Commit SHA to the final Update Status node. This node then sends a successful HTTP POST request to the GitHub Commit Statuses API, which displays a green checkmark on the commit, signaling that the artifact gate has been successfully passed.",
+        "height": 576,
+        "width": 1072,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1680,
+        -272
+      ],
+      "typeVersion": 1,
+      "id": "89ce57c9-0dde-43d2-84fb-e9847cd36b4f",
+      "name": "Sticky Note2"
+    }
+  ],
+  "pinData": {
+    "GithubPushTrigger": [
+      {
+        "json": {
+          "body": {
+            "ref": "refs/heads/main",
+            "before": "fd1aa707dc6096efcbe91683b7fd1352c8baaeb8",
+            "after": "b1b80a10f061313c0bf69c6202934a8610f2e3ce",
+            "repository": {
+              "id": 1040155358,
+              "node_id": "R_kgDOPf-C3g",
+              "name": "repo_name",
+              "full_name": "repo_owner/repo_name",
+              "private": false,
+              "owner": {
+                "name": "repo_owner",
+                "email": "151736888+repo_owner@users.noreply.github.com",
+                "login": "repo_owner",
+                "id": 151736888,
+                "node_id": "U_kgDOCQtSOA",
+                "avatar_url": "https://avatars.githubusercontent.com/u/151736888?v=4",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/repo_owner",
+                "html_url": "https://github.com/repo_owner",
+                "followers_url": "https://api.github.com/users/repo_owner/followers",
+                "following_url": "https://api.github.com/users/repo_owner/following{/other_user}",
+                "gists_url": "https://api.github.com/users/repo_owner/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/repo_owner/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/repo_owner/subscriptions",
+                "organizations_url": "https://api.github.com/users/repo_owner/orgs",
+                "repos_url": "https://api.github.com/users/repo_owner/repos",
+                "events_url": "https://api.github.com/users/repo_owner/events{/privacy}",
+                "received_events_url": "https://api.github.com/users/repo_owner/received_events",
+                "type": "User",
+                "user_view_type": "public",
+                "site_admin": false
+              },
+              "html_url": "https://github.com/repo_owner/repo_name",
+              "description": "n8n work flow ",
+              "fork": false,
+              "url": "https://api.github.com/repos/repo_owner/repo_name",
+              "forks_url": "https://api.github.com/repos/repo_owner/repo_name/forks",
+              "keys_url": "https://api.github.com/repos/repo_owner/repo_name/keys{/key_id}",
+              "collaborators_url": "https://api.github.com/repos/repo_owner/repo_name/collaborators{/collaborator}",
+              "teams_url": "https://api.github.com/repos/repo_owner/repo_name/teams",
+              "hooks_url": "https://api.github.com/repos/repo_owner/repo_name/hooks",
+              "issue_events_url": "https://api.github.com/repos/repo_owner/repo_name/issues/events{/number}",
+              "events_url": "https://api.github.com/repos/repo_owner/repo_name/events",
+              "assignees_url": "https://api.github.com/repos/repo_owner/repo_name/assignees{/user}",
+              "branches_url": "https://api.github.com/repos/repo_owner/repo_name/branches{/branch}",
+              "tags_url": "https://api.github.com/repos/repo_owner/repo_name/tags",
+              "blobs_url": "https://api.github.com/repos/repo_owner/repo_name/git/blobs{/sha}",
+              "git_tags_url": "https://api.github.com/repos/repo_owner/repo_name/git/tags{/sha}",
+              "git_refs_url": "https://api.github.com/repos/repo_owner/repo_name/git/refs{/sha}",
+              "trees_url": "https://api.github.com/repos/repo_owner/repo_name/git/trees{/sha}",
+              "statuses_url": "https://api.github.com/repos/repo_owner/repo_name/statuses/{sha}",
+              "languages_url": "https://api.github.com/repos/repo_owner/repo_name/languages",
+              "stargazers_url": "https://api.github.com/repos/repo_owner/repo_name/stargazers",
+              "contributors_url": "https://api.github.com/repos/repo_owner/repo_name/contributors",
+              "subscribers_url": "https://api.github.com/repos/repo_owner/repo_name/subscribers",
+              "subscription_url": "https://api.github.com/repos/repo_owner/repo_name/subscription",
+              "commits_url": "https://api.github.com/repos/repo_owner/repo_name/commits{/sha}",
+              "git_commits_url": "https://api.github.com/repos/repo_owner/repo_name/git/commits{/sha}",
+              "comments_url": "https://api.github.com/repos/repo_owner/repo_name/comments{/number}",
+              "issue_comment_url": "https://api.github.com/repos/repo_owner/repo_name/issues/comments{/number}",
+              "contents_url": "https://api.github.com/repos/repo_owner/repo_name/contents/{+path}",
+              "compare_url": "https://api.github.com/repos/repo_owner/repo_name/compare/{base}...{head}",
+              "merges_url": "https://api.github.com/repos/repo_owner/repo_name/merges",
+              "archive_url": "https://api.github.com/repos/repo_owner/repo_name/{archive_format}{/ref}",
+              "downloads_url": "https://api.github.com/repos/repo_owner/repo_name/downloads",
+              "issues_url": "https://api.github.com/repos/repo_owner/repo_name/issues{/number}",
+              "pulls_url": "https://api.github.com/repos/repo_owner/repo_name/pulls{/number}",
+              "milestones_url": "https://api.github.com/repos/repo_owner/repo_name/milestones{/number}",
+              "notifications_url": "https://api.github.com/repos/repo_owner/repo_name/notifications{?since,all,participating}",
+              "labels_url": "https://api.github.com/repos/repo_owner/repo_name/labels{/name}",
+              "releases_url": "https://api.github.com/repos/repo_owner/repo_name/releases{/id}",
+              "deployments_url": "https://api.github.com/repos/repo_owner/repo_name/deployments",
+              "created_at": 1755527836,
+              "updated_at": "2025-11-12T14:50:11Z",
+              "pushed_at": 1765369428,
+              "git_url": "git://github.com/repo_owner/repo_name.git",
+              "ssh_url": "git@github.com:repo_owner/repo_name.git",
+              "clone_url": "https://github.com/repo_owner/repo_name.git",
+              "svn_url": "https://github.com/repo_owner/repo_name",
+              "homepage": null,
+              "size": 50,
+              "stargazers_count": 0,
+              "watchers_count": 0,
+              "language": "Swift",
+              "has_issues": true,
+              "has_projects": true,
+              "has_downloads": true,
+              "has_wiki": true,
+              "has_pages": false,
+              "has_discussions": false,
+              "forks_count": 0,
+              "mirror_url": null,
+              "archived": false,
+              "disabled": false,
+              "open_issues_count": 1,
+              "license": null,
+              "allow_forking": true,
+              "is_template": false,
+              "web_commit_signoff_required": false,
+              "topics": [],
+              "visibility": "public",
+              "forks": 0,
+              "open_issues": 1,
+              "watchers": 0,
+              "default_branch": "main",
+              "stargazers": 0,
+              "master_branch": "main"
+            },
+            "pusher": {
+              "name": "repo_owner",
+              "email": "151736888+repo_owner@users.noreply.github.com"
+            },
+            "sender": {
+              "login": "repo_owner",
+              "id": 151736888,
+              "node_id": "U_kgDOCQtSOA",
+              "avatar_url": "https://avatars.githubusercontent.com/u/151736888?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/repo_owner",
+              "html_url": "https://github.com/repo_owner",
+              "followers_url": "https://api.github.com/users/repo_owner/followers",
+              "following_url": "https://api.github.com/users/repo_owner/following{/other_user}",
+              "gists_url": "https://api.github.com/users/repo_owner/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/repo_owner/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/repo_owner/subscriptions",
+              "organizations_url": "https://api.github.com/users/repo_owner/orgs",
+              "repos_url": "https://api.github.com/users/repo_owner/repos",
+              "events_url": "https://api.github.com/users/repo_owner/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/repo_owner/received_events",
+              "type": "User",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "created": false,
+            "deleted": false,
+            "forced": false,
+            "base_ref": null,
+            "compare": "https://github.com/repo_owner/repo_name/compare/fd1aa707dc60...b1b80a10f061",
+            "commits": [
+              {
+                "id": "b1b80a10f061313c0bf69c6202934a8610f2e3ce",
+                "tree_id": "af6aa1678954fee6e3da85c2a1bcdd509cc4f4de",
+                "distinct": true,
+                "message": "added change 10 Dec, 1",
+                "timestamp": "2025-12-10T17:47:05+05:30",
+                "url": "https://github.com/repo_owner/repo_name/commit/b1b80a10f061313c0bf69c6202934a8610f2e3ce",
+                "author": {
+                  "name": "repo_owner",
+                  "email": "repo_owner@example.com",
+                  "date": "2025-12-10T17:47:05+05:30",
+                  "username": "repo_owner"
+                },
+                "committer": {
+                  "name": "repo_owner",
+                  "email": "repo_owner@example.com",
+                  "date": "2025-12-10T17:47:05+05:30",
+                  "username": "repo_owner"
+                },
+                "added": [],
+                "removed": [],
+                "modified": [
+                  "n8n_flow_app/.env.staging"
+                ]
+              }
+            ],
+            "head_commit": {
+              "id": "b1b80a10f061313c0bf69c6202934a8610f2e3ce",
+              "tree_id": "af6aa1678954fee6e3da85c2a1bcdd509cc4f4de",
+              "distinct": true,
+              "message": "added change 10 Dec, 1",
+              "timestamp": "2025-12-10T17:47:05+05:30",
+              "url": "https://github.com/repo_owner/repo_name/commit/b1b80a10f061313c0bf69c6202934a8610f2e3ce",
+              "author": {
+                "name": "repo_owner",
+                "email": "repo_owner@example.com",
+                "date": "2025-12-10T17:47:05+05:30",
+                "username": "repo_owner"
+              },
+              "committer": {
+                "name": "repo_owner",
+                "email": "repo_owner@example.com",
+                "date": "2025-12-10T17:47:05+05:30",
+                "username": "repo_owner"
+              },
+              "added": [],
+              "removed": [],
+              "modified": [
+                "n8n_flow_app/.env.staging"
+              ]
+            }
+          },
+          "headers": {
+            "host": "wliteck3.app.n8n.cloud",
+            "user-agent": "GitHub-Hookshot/5c4e7bf",
+            "content-length": "7246",
+            "accept": "*/*",
+            "accept-encoding": "gzip, br",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "140.82.115.111",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "9abcb73732dc5886-IAD",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "x-forwarded-for": "140.82.115.111, 104.23.211.141",
+            "x-forwarded-host": "wliteck3.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-75-7cf7798779-76v6t",
+            "x-github-delivery": "14b826e0-d5c3-11f0-8a63-3991810c9f79",
+            "x-github-event": "push",
+            "x-github-hook-id": "585564438",
+            "x-github-hook-installation-target-id": "1040155358",
+            "x-github-hook-installation-target-type": "repository",
+            "x-is-trusted": "yes",
+            "x-real-ip": "140.82.115.111"
+          },
+          "query": {}
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Verify Artifacts": {
+      "main": [
+        [
+          {
+            "node": "Artifacts Validation and Get Repository Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GithubPushTrigger": {
+      "main": [
+        [
+          {
+            "node": "Check Sentry Artifacts Releases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sentry Artifacts Releases": {
+      "main": [
+        [
+          {
+            "node": "Check Sentry Artifacts files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sentry Artifacts files": {
+      "main": [
+        [
+          {
+            "node": "Verify Artifacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Artifacts Validation and Get Repository Data": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3d6c6712-905b-4cb6-95aa-81e287c0bfa5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "14e4c77104722ab186539dfea5182e419aecc83d85963fe13f6de862c875ebfa"
+  },
+  "id": "ZdMbuyTs5MXQpA1p",
+  "tags": []
+}
