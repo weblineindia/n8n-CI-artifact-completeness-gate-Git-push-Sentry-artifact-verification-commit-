@@ -1,4 +1,4 @@
-# **CI Artifact Completeness Gate -- GitHub Push → Sentry Artifact Verification → GitHub Commit Status**
+# **CI Artifact Completeness Gate --> GitHub Push → Sentry Artifact Verification → GitHub Commit Status**
 
 ## **1.2 Summary (TL;DR)**
 
