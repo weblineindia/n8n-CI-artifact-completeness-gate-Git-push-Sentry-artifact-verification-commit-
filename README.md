@@ -58,7 +58,7 @@ preventing un-debuggable releases.
 
 ## **1.5 Requirements to Use This Workflow**
 
--   n8n instance (cloud or self-hosted)
+-   [n8n account](https://n8n.partnerlinks.io/om1efg2qgvwi) (cloud or self-hosted)
 -   GitHub repository access (API credentials)
 -   Sentry project with:
     -   org_slug
